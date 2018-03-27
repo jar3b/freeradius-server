@@ -193,9 +193,10 @@ bool client_add(RADCLIENT_LIST *clients, RADCLIENT *client)
 #endif
 	RADCLIENT *old;
 	char buffer[FR_IPADDR_PREFIX_STRLEN];
-
-	if (!client) return false;
-
+    
+    if (!client) return false;
+    if (strlen(client->longname) == 0) return true;
+    
 	/*
 	 *	Hack to fixup wildcard clients
 	 *
@@ -907,6 +908,7 @@ RADCLIENT *client_afrom_request(TALLOC_CTX *ctx, REQUEST *request)
 	fr_ipaddr_t	ipaddr;
 
 	if (!request) return NULL;
+    if (!request->control) return NULL;
 
 	snprintf(buffer, sizeof(buffer), "dynamic%i", cnt++);
 
