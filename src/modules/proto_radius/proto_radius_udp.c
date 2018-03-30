@@ -1354,6 +1354,7 @@ static ssize_t mod_write(void *instance, void *packet_ctx,
 		RADCLIENT *newclient;
 		fr_dlist_t *entry;
 		dynamic_packet_t *saved;
+        uint8_t dyn = 3;
 
 		/*
 		 *	@todo - maybe just duplicate the new client
@@ -1379,7 +1380,14 @@ static ssize_t mod_write(void *instance, void *packet_ctx,
 		if (buffer_len == 1) {
 			if ((inst->dynamic_clients.num_negative_clients <= 1024) &&
 			    client_add(inst->dynamic_clients.negative, client)) {
-				client->negative = true;
+                dyn = (uint8_t)client->dynamic;
+                if (dyn > 1) {
+                    client_delete(inst->dynamic_clients.negative, client);
+                    client_delete(inst->dynamic_clients.clients, client);
+                    WARN("Unknown client deteled from negative & clients");
+                    return buffer_len;
+                }
+                client->negative = true;
 				inst->dynamic_clients.num_negative_clients++;
 			}
 
