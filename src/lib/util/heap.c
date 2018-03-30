@@ -35,11 +35,15 @@ RCSID("$Id$")
  */
 
 struct fr_heap_t {
-	size_t size;
-	size_t num_elements;
-	ssize_t offset;
-	fr_heap_cmp_t cmp;
-	void **p;
+	size_t		size;			//!< Number of nodes allocated.
+	size_t		offset;			//!< Offset of heap index in element structure.
+
+	int32_t		num_elements;		//!< Number of nodes used.
+
+	char const	*type;			//!< Type of elements.
+	fr_heap_cmp_t	cmp;			//!< Comparator function.
+
+	void		**p;			//!< Array of nodes.
 };
 
 /*
@@ -47,14 +51,14 @@ struct fr_heap_t {
  *	2i+2.  These macros wrap the logic, so the code is more
  *	descriptive.
  */
-#define HEAP_PARENT(x) ( ( (x) - 1 ) / 2 )
-#define HEAP_LEFT(x) ( 2*(x) + 1 )
-/* #define HEAP_RIGHT(x) ( 2*(x) + 2 ) */
-#define	HEAP_SWAP(a, b) { void *_tmp = a; a = b; b = _tmp; }
+#define HEAP_PARENT(_x)	(((_x) - 1 ) / 2)
+#define HEAP_LEFT(_x)	(2 * (_x) + 1)
+/* #define HEAP_RIGHT(_x) (2 * (_x) + 2 ) */
+#define	HEAP_SWAP(_a, _b) { void *_tmp = _a; _a = _b; _b = _tmp; }
 
-static int fr_heap_bubble(fr_heap_t *hp, size_t child);
+static int fr_heap_bubble(fr_heap_t *hp, int32_t child);
 
-fr_heap_t *fr_heap_create(fr_heap_cmp_t cmp, ssize_t offset)
+fr_heap_t *_fr_heap_create(fr_heap_cmp_t cmp, char const *type, size_t offset)
 {
 	fr_heap_t *fh;
 
@@ -70,6 +74,7 @@ fr_heap_t *fr_heap_create(fr_heap_cmp_t cmp, ssize_t offset)
 		return NULL;
 	}
 
+	fh->type = type;
 	fh->cmp = cmp;
 	fh->offset = offset;
 
@@ -88,28 +93,47 @@ fr_heap_t *fr_heap_create(fr_heap_cmp_t cmp, ssize_t offset)
  *	heap is also stored in the element itself at the given offset
  *	in bytes.
  */
-#define SET_OFFSET(heap, node) \
-    if (heap->offset >= 0) \
-	    *((int *)(((uint8_t *)heap->p[node]) + heap->offset)) = node
+#define SET_OFFSET(heap, node) *((int32_t *)(((uint8_t *)heap->p[node]) + heap->offset)) = node
 
 /*
  *	RESET_OFFSET is used for sanity checks. It sets offset to an
  *	invalid value.
  */
-#define RESET_OFFSET(heap, node) \
-    if (heap->offset >= 0) \
-	    *((int *)(((uint8_t *)heap->p[node]) + heap->offset)) = -1
+#define RESET_OFFSET(heap, node) *((int32_t *)(((uint8_t *)heap->p[node]) + heap->offset)) = -1
 
 int fr_heap_insert(fr_heap_t *hp, void *data)
 {
-	size_t child = hp->num_elements;
+	int32_t child = hp->num_elements;
+
+#ifndef TALLOC_GET_TYPE_ABORT_NOOP
+	if (hp->type) (void)_talloc_get_type_abort(data, hp->type, __location__);
+#endif
 
 	/*
 	 *	Heap is full.  Double it's size.
 	 */
-	if (child == hp->size) {
-		hp->size *= 2;
-		hp->p = talloc_realloc(hp, hp->p, void *, hp->size);
+	if ((size_t)child == hp->size) {
+		void	**n;
+		size_t	n_size = hp->size * 2;
+
+		/*
+		 *	heap_id is a 32-bit signed integer.  If the heap will
+		 *	grow to contain more than 2B elements, disallow
+		 *	integer overflow.  Tho TBH, that should really never
+		 *	happen.
+		 */
+		if (n_size > INT32_MAX) {
+			fr_strerror_printf("Heap is full");
+			return 0;
+		}
+
+		n = talloc_realloc(hp, hp->p, void *, n_size);
+		if (!n) {
+			fr_strerror_printf("Failed expanding heap");
+			return 0;
+		}
+		hp->size = n_size;
+		hp->p = n;
 	}
 
 	hp->p[child] = data;
@@ -119,13 +143,13 @@ int fr_heap_insert(fr_heap_t *hp, void *data)
 }
 
 
-static int fr_heap_bubble(fr_heap_t *hp, size_t child)
+static int fr_heap_bubble(fr_heap_t *hp, int32_t child)
 {
 	/*
 	 *	Bubble up the element.
 	 */
 	while (child > 0) {
-		size_t parent = HEAP_PARENT(child);
+		int32_t parent = HEAP_PARENT(child);
 
 		/*
 		 *	Parent is smaller than the child.  We're done.
@@ -150,7 +174,7 @@ static int fr_heap_bubble(fr_heap_t *hp, size_t child)
  */
 int fr_heap_extract(fr_heap_t *hp, void *data)
 {
-	int parent, child, max;
+	int32_t parent, child, max;
 
 	if (!hp || (hp->num_elements == 0)) return 0;
 
@@ -163,14 +187,12 @@ int fr_heap_extract(fr_heap_t *hp, void *data)
 		parent = 0;
 
 	} else {		/* extract from the middle */
-		if (hp->offset < 0) return 0;
-
-		parent = *((int *)(((uint8_t *)data) + hp->offset));
+		parent = *((int32_t *)(((uint8_t *)data) + hp->offset));
 
 		/*
 		 *	Out of bounds.
 		 */
-		if ((parent < 0) || ((size_t) parent >= hp->num_elements)) return 0;
+		if ((parent < 0) || (parent >= hp->num_elements)) return 0;
 	}
 
 	RESET_OFFSET(hp, parent);
@@ -241,11 +263,11 @@ void *fr_heap_peek_tail(fr_heap_t *hp)
 	return hp->p[hp->num_elements - 1];
 }
 
-size_t fr_heap_num_elements(fr_heap_t *hp)
+uint32_t fr_heap_num_elements(fr_heap_t *hp)
 {
 	if (!hp) return 0;
 
-	return hp->num_elements;
+	return (uint32_t)hp->num_elements;
 }
 
 
@@ -266,8 +288,8 @@ static bool fr_heap_check(fr_heap_t *hp, void *data)
 }
 
 typedef struct heap_thing {
-	int data;
-	int heap;		/* for the heap */
+	int	data;
+	int32_t	heap;		/* for the heap */
 } heap_thing;
 
 
@@ -297,7 +319,7 @@ int main(int argc, char **argv)
 		skip = atoi(argv[1]);
 	}
 
-	hp = fr_heap_create(heap_cmp, offsetof(heap_thing, heap));
+	hp = fr_heap_create(heap_cmp, offsetof(heap_thing, heap_id));
 	if (!hp) {
 		fprintf(stderr, "Failed creating heap!\n");
 		fr_exit(1);
@@ -324,7 +346,7 @@ int main(int argc, char **argv)
 #endif
 
 	if (skip) {
-		int entry;
+		int32_t entry;
 
 		printf("%d elements to remove\n", ARRAY_SIZE / skip);
 
