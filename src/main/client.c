@@ -908,6 +908,7 @@ RADCLIENT *client_afrom_request(TALLOC_CTX *ctx, REQUEST *request)
 	fr_ipaddr_t	ipaddr;
 
 	if (!request) return NULL;
+	if (!request->control) return NULL;
 
 	snprintf(buffer, sizeof(buffer), "dynamic%i", cnt++);
 
