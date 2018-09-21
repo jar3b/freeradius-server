@@ -4,3 +4,9 @@ usr/lib/freeradius/libfreeradius-server.so
 usr/lib/freeradius/libfreeradius-tls.so
 usr/lib/freeradius/libfreeradius-util.so
 usr/lib/freeradius/libfreeradius-io.so
+usr/lib/freeradius/libfreeradius-dhcpv4.so
+usr/lib/freeradius/libfreeradius-dhcpv6.so
+usr/lib/freeradius/libfreeradius-eap-sim.so
+usr/lib/freeradius/libfreeradius-ethernet.so
+usr/lib/freeradius/libfreeradius-tacacs.so
+usr/lib/freeradius/libfreeradius-vqp.so
